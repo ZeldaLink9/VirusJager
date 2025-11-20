@@ -1,64 +1,60 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class G29Controller : MonoBehaviour
 {
     [Header("Car Settings")]
-    public float baseSpeed = 5f;           // auto beweegt altijd vooruit
-    public float boostSpeed = 12f;         // max snelheid tijdens gas geven
-    public float acceleration = 5f;        // hoe snel snelheid verandert
-    public float steeringAngle = 45f;      // maximale stuurhoek
+    public float baseSpeed = 5f;          // Always moves forward
+    public float boostSpeed = 15f;        // Extra speed when gas is pressed
+    public float boostAcceleration = 10f; // How fast boost changes
+    public float steeringAngle = 45f;
 
-    private float currentSpeed = 0f;
+    private float currentBoost = 0f;
     private float steerValue;
     private float throttleValue;
-    private float brakeValue;
 
-    // Input Actions
     public InputAction steerAction;
     public InputAction throttleAction;
-    public InputAction brakeAction;
 
     void OnEnable()
     {
         steerAction.Enable();
         throttleAction.Enable();
-        brakeAction.Enable();
     }
 
     void OnDisable()
     {
         steerAction.Disable();
         throttleAction.Disable();
-        brakeAction.Disable();
     }
 
     void Update()
     {
+        // Lees stuur
         steerValue = steerAction.ReadValue<float>();
-        throttleValue = throttleAction.ReadValue<float>();
-        brakeValue = brakeAction.ReadValue<float>();
 
-        // ---- SPEED MODEL ----
-        float targetSpeed = baseSpeed;
+        // Lees throttle en normaliseer van G29 (los = 1, ingedrukt = -1) naar 0..1
+        float rawThrottle = throttleAction.ReadValue<float>();   // 1..-1
+        throttleValue = Mathf.Clamp01((1f - rawThrottle) / 2f); // 0..1
 
-        if (throttleValue > 0.05f) // gas ingedrukt
-            targetSpeed = boostSpeed;
+        // Bereken gewenste boost op basis van throttle
+        float targetBoost = throttleValue * boostSpeed;
 
-        if (brakeValue > 0.05f) // rem ingedrukt
-            targetSpeed = 0f;
+        // Smoothly bewegen naar target boost
+        currentBoost = Mathf.MoveTowards(
+            currentBoost,
+            targetBoost,
+            boostAcceleration * Time.deltaTime
+        );
 
-        // vloeiend naar target speed bewegen
-        currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
+        // Final speed: altijd minimaal baseSpeed, plus boost
+        float finalSpeed = baseSpeed + currentBoost;
 
-        // ---- MOVEMENT ----
-        transform.Translate(Vector3.forward * currentSpeed * Time.deltaTime);
+        // Beweeg en draai de auto
+        transform.Translate(Vector3.forward * finalSpeed * Time.deltaTime);
+        transform.Rotate(Vector3.up, steerValue * steeringAngle * Time.deltaTime);
 
-        // ---- REALISTISCH STUREN ----
-        // Alleen kunnen sturen als de auto beweegt
-        float speedFactor = Mathf.InverseLerp(0f, boostSpeed, currentSpeed);
-
-        float rotation = steerValue * steeringAngle * speedFactor;
-        transform.Rotate(Vector3.up, rotation * Time.deltaTime);
+        // Debug: laat throttle, boost en snelheid zien
+        Debug.Log($"Throttle: {throttleValue:F2}, Boost: {currentBoost:F2}, Speed: {finalSpeed:F2}");
     }
 }
